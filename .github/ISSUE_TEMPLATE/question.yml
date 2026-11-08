@@ -1,0 +1,21 @@
+name: Ask a question
+description: A question about installing or running Zenorun.
+labels: [question]
+assignees: [exaby73]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is public: everyone can read what you write here.
+        The [documentation](https://zenorun.com/docs) may already answer it.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Zenorun version
+      description: Help › About in the web UI shows it.

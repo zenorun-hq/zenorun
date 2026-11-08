@@ -1,0 +1,58 @@
+# The web UI's Help › Report a problem opens this form as ?template=bug_report.yml and fills in the
+# field whose id is version. Keep both names.
+name: Report a problem
+description: Something in Zenorun doesn't work as the docs say.
+labels: [bug]
+assignees: [exaby73]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is public: everyone can read what you write here.
+        Report a security issue privately instead, as [SECURITY.md](https://github.com/zenorun-hq/zenorun/blob/main/SECURITY.md) says.
+        Leave out secrets: license keys, GitHub App credentials, tokens and the values in your `.env` file.
+  - type: input
+    id: version
+    attributes:
+      label: Zenorun version
+      description: Help › About in the web UI shows it. Help › Report a problem fills it in.
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you run it
+      options:
+        - Docker Compose
+        - Dokploy
+        - Something else (say what below)
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and any error message, as written.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The steps, and the workflow file or runner profile settings if a job is involved.
+  - type: markdown
+    attributes:
+      value: |
+        **Support bundle.** It helps us most. An administrator downloads it from Health › Download support bundle, and [What the support bundle holds](https://zenorun.com/docs/support-bundle) lists what is in it.
+        Secrets are removed, but it names your repositories, runner profiles and server. Attach it below, or, to keep it out of public view, email it to support@zenorun.com with a link to this issue.
+  - type: textarea
+    id: bundle
+    attributes:
+      label: Support bundle and logs
+      description: Drag the support bundle here, or paste the relevant log lines in a code block.
