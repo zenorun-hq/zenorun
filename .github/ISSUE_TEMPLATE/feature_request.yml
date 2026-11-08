@@ -1,0 +1,25 @@
+name: Request a feature
+description: Ask for something Zenorun doesn't do.
+labels: [feature]
+assignees: [exaby73]
+body:
+  - type: markdown
+    attributes:
+      value: "This repository is public: everyone can read what you write here."
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you're trying to do
+      description: The job or task, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: How you'd like it to work, if you have an idea.
+  - type: input
+    id: version
+    attributes:
+      label: Zenorun version
+      description: Help › About in the web UI shows it.

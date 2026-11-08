@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security issue
+    url: https://github.com/zenorun-hq/zenorun/security/advisories/new
+    about: Report a vulnerability privately, never in a public issue. You can also write to security@zenorun.com.
+  - name: Documentation
+    url: https://zenorun.com/docs
+    about: How to install, run and use Zenorun.
+  - name: Email support
+    url: https://zenorun.com/contact
+    about: Every plan may write to support@zenorun.com, best effort, instead of opening an issue here.
+  - name: License keys, renewal and billing
+    url: https://zenorun.com/portal
+    about: Get or rotate your key, renew, and manage billing in the customer portal.
