@@ -11,7 +11,7 @@ Report it privately, in either of these ways:
 
 In the web UI, Help › Report a security issue links to both.
 
-This covers Zenorun's service image, its runner images, the install files in this repository, and the website and customer portal at zenorun.com.
+This covers Zenorun's service image, its runner images and the install files in this repository.
 
 ## What to include
 
