@@ -5,7 +5,7 @@ assignees: [exaby73]
 body:
   - type: markdown
     attributes:
-      value: This repository is public: everyone can read what you write here.
+      value: "This repository is public: everyone can read what you write here."
   - type: textarea
     id: problem
     attributes:
