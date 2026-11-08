@@ -21,8 +21,14 @@ This covers Zenorun's service image, its runner images, the install files in thi
 
 Leave out secrets: license keys, GitHub App credentials, tokens and the values in your `.env` file. A support bundle has them removed, so you may attach one. [What the support bundle holds](https://zenorun.com/docs/support-bundle) lists everything in it.
 
+## Supported versions
+
+We fix security issues in the latest release. To get a fix, upgrade to the release that carries it.
+
 ## What happens next
 
-We reply to confirm that we have your report, and keep you told as we look into it and fix it. When the fix is released, we publish a security advisory in this repository.
+We reply within 3 business days to confirm that we have your report, and keep you told as we look into it and fix it. When the fix is released, we publish a security advisory in this repository.
+
+There is no bug bounty.
 
 For anything that isn't a security issue, see [Contact](https://zenorun.com/contact).
