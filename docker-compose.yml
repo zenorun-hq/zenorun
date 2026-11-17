@@ -1,0 +1,223 @@
+# Ephemeral GitHub runners: one controller, its Postgres database and one
+# allocator for one GitHub repository or organization.
+# https://zenorun.com/docs/install is the install guide.
+#
+#   (umask 077; docker run --rm --network none <service image> gen-env >> .env)
+#   docker compose up -d
+#   docker compose logs controller | grep -i "setup code"
+#
+# Then open the web UI on port 8080 and enter the setup code. The setup
+# wizard creates the GitHub App and the runner profiles. The only thing to
+# prepare is a .env file next to this file with two generated secrets,
+# EGR_POSTGRES_PASSWORD and EGR_SECRETS_KEY. Compose refuses to start
+# without them. Keep a copy of EGR_SECRETS_KEY: it decrypts the stored GitHub
+# App credentials, and database backups do not contain it.
+# https://zenorun.com/docs/install#the-two-secrets explains both.
+#
+# Dokploy: create a Compose service of type "Docker Compose", not "Stack",
+# and paste this file unchanged as the Raw source (or use the Git source).
+# Paste the output of `docker run --rm <service image> gen-env` into the
+# Environment tab, which Dokploy writes to .env. Add a domain for service
+# `controller`, port 8080, and deploy. The setup code is in the Logs tab of
+# the `controller` service. Swarm (the Stack type) ignores network_mode and
+# privileged, so the allocator, which holds the Docker socket, would join a
+# network. See https://zenorun.com/docs/dokploy.
+#
+# The service image is public and pinned by digest. Upgrading means
+# deploying a newer copy of this file. EGR_IMAGE overrides the image for
+# development only.
+#
+# Required variables, from the service image's gen-env command
+# (https://zenorun.com/docs/install#the-two-secrets):
+#   EGR_POSTGRES_PASSWORD       the Postgres role's password. Postgres reads
+#                               it only when its volume is empty; changing
+#                               it later takes the steps in
+#                               https://zenorun.com/docs/secrets#the-database-password
+#   EGR_SECRETS_KEY             the key that encrypts the secrets the
+#                               controller stores
+#
+# Optional variables, none of them needed on a usual host:
+#   EGR_RUNNER_DISK_DIR         host directory of the runner disk file,
+#                               default /var/lib/ephemeral-gh-runners
+#   EGR_DOCKER_SOCKET           host path of the Docker socket,
+#                               default /var/run/docker.sock
+#   EGR_HOST_ADDRESS_DISCOVERY  `off` stops the allocator from blocking the
+#                               host's own addresses for guests
+#   EGR_LOG_MAX_SIZE            the size of one log file of each service
+#                               before Docker rotates it, default 10m
+#   EGR_LOG_MAX_FILE            how many log files Docker keeps for each
+#                               service, default 5, at least 1
+services:
+  allocator:
+    logging:
+      driver: local
+      options:
+        max-size: "${EGR_LOG_MAX_SIZE:-10m}"
+        max-file: "${EGR_LOG_MAX_FILE:-5}"
+        # The local driver refuses to compress fewer than two files.
+        compress: "false"
+    image: ${EGR_IMAGE:-ghcr.io/hexsis-llc/ephemeral-gh-runners@sha256:94150690b6f648b04491db8ea36940143bc86550d91d4e1ccf88cb90c78cdc2b}
+    entrypoint: ["/usr/local/bin/egr-allocator"]
+    # The only service with the Docker socket, which is root-equivalent. It
+    # starts each job's KVM worker through the Docker API and needs no
+    # network. It reads the host's addresses through a short-lived helper
+    # container on the host network that runs this image, and denies them
+    # to guests. While a runner profile with private destinations has jobs,
+    # a second such helper, with only NET_ADMIN, keeps the allocator's own
+    # firewall table that blocks guests from the host (the host guard).
+    user: "0:0"
+    network_mode: none
+    # Loop devices, the runner disk's XFS mount and its project quotas, and
+    # /dev/kvm. The Docker socket already gives this service root on the host.
+    privileged: true
+    environment:
+      EGR_RUNNER_DISK_DIR: ${EGR_RUNNER_DISK_DIR:-/var/lib/ephemeral-gh-runners}
+      EGR_HOST_ADDRESS_DISCOVERY: ${EGR_HOST_ADDRESS_DISCOVERY:-}
+    volumes:
+      - ${EGR_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      - egr-allocator:/var/lib/egr/allocator
+      - egr-socket:/run/egr
+      # The local release set: runner releases built on this host, which
+      # only a publisher's stack and the tests write. The allocator reads
+      # the official signed channel through the Docker daemon.
+      - egr-releases:/var/lib/egr/releases:ro
+      # The runner disk: a sparse file and its XFS mount, in a directory per
+      # Compose project. Same path inside and outside, because each worker
+      # bind-mounts its directory from the host. rshared carries the
+      # allocator's mount back to the host, where the Docker daemon sees it.
+      - type: bind
+        source: ${EGR_RUNNER_DISK_DIR:-/var/lib/ephemeral-gh-runners}
+        target: ${EGR_RUNNER_DISK_DIR:-/var/lib/ephemeral-gh-runners}
+        bind:
+          propagation: rshared
+          create_host_path: true
+    restart: unless-stopped
+    # Stopping the allocator never stops guests; allow in-flight calls to end.
+    stop_grace_period: 3m
+    labels:
+      com.hexsis.egr.role: allocator
+
+  controller:
+    logging:
+      driver: local
+      options:
+        max-size: "${EGR_LOG_MAX_SIZE:-10m}"
+        max-file: "${EGR_LOG_MAX_FILE:-5}"
+        # The local driver refuses to compress fewer than two files.
+        compress: "false"
+    image: ${EGR_IMAGE:-ghcr.io/hexsis-llc/ephemeral-gh-runners@sha256:94150690b6f648b04491db8ea36940143bc86550d91d4e1ccf88cb90c78cdc2b}
+    user: "10001:10001"
+    # The only service on the internet-facing path holds no capability, can
+    # gain none, writes only its volumes and /tmp, and has a bounded number
+    # of processes and threads.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 512
+    depends_on:
+      allocator:
+        condition: service_started
+      # Restarting or recreating Postgres restarts the controller too.
+      postgres:
+        condition: service_healthy
+        restart: true
+    environment:
+      EGR_POSTGRES_PASSWORD: ${EGR_POSTGRES_PASSWORD:?generate .env with the service image's gen-env command (https://zenorun.com/docs/install#the-two-secrets)}
+      EGR_SECRETS_KEY: ${EGR_SECRETS_KEY:?generate .env with the service image's gen-env command (https://zenorun.com/docs/install#the-two-secrets)}
+    # The project network for GitHub and the reverse proxy, and egr-db for
+    # Postgres.
+    networks:
+      - default
+      - egr-db
+    volumes:
+      # Evidence files. The controller deletes the SQLite files of a
+      # release before Postgres here once Postgres records their import.
+      - egr-controller:/var/lib/egr/controller
+      - egr-socket:/run/egr
+      # What each job ran on, and the runner versions GitHub refused, which
+      # release selection leaves out. A refusal is found only within 24
+      # hours, so the file must outlive a recreate of this container.
+      - egr-release-observations:/var/lib/egr/release-observations
+    # The web UI listens on port 8080 with plain HTTP. No port is published:
+    # Dokploy's Traefik, or another reverse proxy on the same Docker
+    # network, reaches it as controller:8080 and terminates HTTPS. Without a
+    # proxy, an SSH tunnel to the container's address is the safe way in.
+    # Uncommenting `ports` publishes 8080 on every interface, past the host
+    # firewall, and until setup finishes only the setup code protects it.
+    # ports:
+    #   - "8080:8080"
+    restart: unless-stopped
+    # SIGTERM stops admission and closes GitHub sessions; guests keep running.
+    stop_grace_period: 1m
+    labels:
+      com.hexsis.egr.role: controller
+
+  # The controller's database: settings, the GitHub App credentials
+  # (encrypted with EGR_SECRETS_KEY), operators, sign-in sessions, the job
+  # store and the evidence index. Only the controller reaches it, over the
+  # internal network egr-db, and no port is published. Back it up with
+  # pg_dump (https://zenorun.com/docs/backup-and-restore#back-up). The image
+  # is the one the tests run
+  # (controller/internal/db.PostgresImage); a major upgrade is a dump and a
+  # restore into a new volume, done as a deliberate release.
+  postgres:
+    logging:
+      driver: local
+      options:
+        max-size: "${EGR_LOG_MAX_SIZE:-10m}"
+        max-file: "${EGR_LOG_MAX_FILE:-5}"
+        # The local driver refuses to compress fewer than two files.
+        compress: "false"
+    image: postgres:18.6-alpine3.24@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    command: ["postgres", "-c", "max_connections=30"]
+    # The image's entrypoint starts as root, makes the data directory the
+    # postgres user's and drops to that user, which then holds no
+    # capability. It needs only these to do so.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    environment:
+      # The instance's superuser. The controller uses it only to set up
+      # the role it runs as, egr_app, which owns its tables and holds no
+      # other privilege.
+      POSTGRES_USER: egr
+      POSTGRES_DB: egr
+      # Read only when the volume is empty, to create the role.
+      POSTGRES_PASSWORD: ${EGR_POSTGRES_PASSWORD:?generate .env with the service image's gen-env command (https://zenorun.com/docs/install#the-two-secrets)}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    networks:
+      - egr-db
+    volumes:
+      # Postgres 18 keeps its data in a versioned directory below this path.
+      - egr-postgres:/var/lib/postgresql
+    # TCP, not the socket: the image's first-start initialization listens
+    # only on the socket, so the service is healthy once the real server
+    # accepts connections.
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "egr", "-d", "egr"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 1m
+    restart: unless-stopped
+    # Time for a clean shutdown, so the next start needs no recovery.
+    stop_grace_period: 2m
+    labels:
+      com.hexsis.egr.role: postgres
+
+networks:
+  # Postgres and the controller only. Internal: no route to or from outside
+  # the host, and no other service joins it.
+  egr-db:
+    internal: true
+
+volumes:
+  egr-controller:
+  egr-postgres:
+  egr-allocator:
+  egr-socket:
+  egr-releases:
+  egr-release-observations:
